@@ -1,0 +1,86 @@
+    # dense_block1
+    with tf.variable_scope('dense_block_1'):
+        conv1 = dense_block(norm1, layers=4, growth_rate=12, phase_train=phase_train)  # 256x256x96
+        td1 = conv_layer_with_bn(conv1, [1, 1, conv1.get_shape().as_list()[3], 96], phase_train, True,
+                                 name='transition')  # trainsition
+        # pool1
+        pool1, pool1_indices = tf.nn.max_pool_with_argmax(td1, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1],
+                                                          padding='SAME', name='pool1')
+    # conv2
+    with tf.variable_scope('dense_block_2'):
+        conv2 = dense_block(pool1, layers=4, growth_rate=12, phase_train=phase_train)  # 128x128x144
+        td2 = conv_layer_with_bn(conv2, [1, 1, conv2.get_shape().as_list()[3], 144], phase_train, True,
+                                 name='transition')  # trainsition
+        # pool2
+        pool2, pool2_indices = tf.nn.max_pool_with_argmax(td2, ksize=[1, 2, 2, 1],
+                                                          strides=[1, 2, 2, 1], padding='SAME', name='pool2')
+    # conv3
+    with tf.variable_scope('dense_block_3'):
+        conv3 = dense_block(pool2, layers=4, growth_rate=12, conv_size=(3, 3),
+                            phase_train=phase_train)                            # 64x64x192
+        td3 = conv_layer_with_bn(conv3, [1, 1, conv3.get_shape().as_list()[3], 192], phase_train, True,
+                                 name='transition')  # trainsition
+        # pool3
+        pool3, pool3_indices = tf.nn.max_pool_with_argmax(td3, ksize=[1, 2, 2, 1],
+                                                          strides=[1, 2, 2, 1], padding='SAME', name='pool3')
+    # conv4
+    with tf.variable_scope('dense_block_4'):
+        conv4 = dense_block(pool3, layers=4, growth_rate=12, conv_size=(3, 3), phase_train=phase_train)  # 32x32x240
+        td4 = conv_layer_with_bn(conv4, [1, 1, conv4.get_shape().as_list()[3], 240], phase_train, True,
+                                 name='transition')  # trainsition
+        # pool4
+        pool4, pool4_indices = tf.nn.max_pool_with_argmax(td4, ksize=[1, 2, 2, 1],
+                                                          strides=[1, 2, 2, 1], padding='SAME', name='pool4')
+    with tf.variable_scope('dense_block_5'):
+        conv5 = dense_block(pool4, layers=4, growth_rate=12, conv_size=(3, 3),
+                            phase_train=phase_train)  # 16x16x288
+        td5 = conv_layer_with_bn(conv5, [1, 1, conv5.get_shape().as_list()[3], 288], phase_train, True,
+                                 name='transition')
+        # pool5
+        pool5 = tf.nn.max_pool(td5, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1], padding='SAME', name='pool5')
+
+    with tf.variable_scope('dense_block_6'):
+        conv6 = dense_block(pool5, layers=4, growth_rate=12, conv_size=(3, 3), phase_train=phase_train)  # 8x8x336
+
+    """ End of encoder """
+    """ start upsample """  # 在本文件中似乎没有用到pool indices 来进行upsample。
+    # upsample5
+    # Need to change when using different dataset out_w, out_h
+    # upsample4 = upsample_with_pool_indices(pool4, pool4_indices, pool4.get_shape(), out_w=45, out_h=60, scale=2, name='upsample4')
+    upsample5 = deconv_layer(conv6, [3, 3, 48, 336], [batch_size, 16, 16, 48], 2, "up5")
+    # decode 5
+    with tf.variable_scope('decode_5'):
+        concat5 = tf.concat([upsample5, td5], axis=3)
+        conv_decode5 = dense_block(concat5, layers=4, growth_rate=12, conv_size=(3, 3), phase_train=phase_train)
+
+    # upsample 4
+    # upsample3 = upsample_with_pool_indices(conv_decode4, pool3_indices, conv_decode4.get_shape(), scale=2, name='upsample3')
+    upsample4 = deconv_layer(conv_decode5, [3, 3, 48, 384], [batch_size, 32, 32, 48], 2, "up4")
+    # decode 4
+    with tf.variable_scope('decode_4'):
+        concat4 = tf.concat([upsample4, td4], axis=3)
+        conv_decode4 = dense_block(concat4, layers=4, growth_rate=12, conv_size=(3, 3), phase_train=phase_train)
+
+    # upsample3
+    # upsample2 = upsample_with_pool_indices(conv_decode3, pool2_indices, conv_decode3.get_shape(), scale=2, name='upsample2')
+    upsample3 = deconv_layer(conv_decode4, [3, 3, 48, 336], [batch_size, 64, 64, 48], 2, "up3")
+    # decode 3
+    with tf.variable_scope('decode_3'):
+        concat3 = tf.concat([upsample3, td3], axis=3)
+        conv_decode3 = dense_block(concat3, layers=4, growth_rate=12, conv_size=(3, 3), phase_train=phase_train)
+
+    # upsample2
+    # upsample1 = upsample_with_pool_indices(conv_decode2, pool1_indices, conv_decode2.get_shape(), scale=2, name='upsample1')
+    upsample2 = deconv_layer(conv_decode3, [3, 3, 48, 288], [batch_size, 128, 128, 48], 2, "up2")
+    # decode 2
+    with tf.variable_scope('decode_2'):
+        concat2 = tf.concat([upsample2, td2], axis=3)
+        conv_decode2 = dense_block(concat2, layers=4, growth_rate=12, conv_size=(3, 3), phase_train=phase_train)
+    # upsample1
+    upsample1 = deconv_layer(conv_decode2, [3, 3, 48, 240], [batch_size, 256, 256, 48], 2, "up1")
+    # decode 1
+    with tf.variable_scope('decode_1'):
+        concat1 = tf.concat([upsample1, td1], axis=3)
+        conv_decode1 = dense_block(concat1, layers=4, growth_rate=12, conv_size=(3, 3), phase_train=phase_train)
+    """ end of Decode """
+    """ Start Classify """
